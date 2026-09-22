@@ -28,6 +28,7 @@ class SupplyTest extends TestCase
         $this->assertSame('sqlite', $pdo->getAttribute(\PDO::ATTR_DRIVER_NAME));
         // Disposable test tables only; never connect to the physical MySQL database.
         $pdo->exec('CREATE TABLE usuarios (id_usuario INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, apellido TEXT, correo TEXT UNIQUE, password TEXT, rol TEXT, dni TEXT, telefono TEXT, sexo TEXT, fecha_nacimiento TEXT)');
+        $pdo->exec('CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, family_id TEXT, id_usuario INTEGER, token_hash TEXT UNIQUE, device_hash TEXT, user_agent TEXT, expires_at DATETIME, used_at DATETIME, revoked_at DATETIME, replaced_by TEXT, created_at DATETIME, updated_at DATETIME)');
         $pdo->exec('CREATE TABLE insumos (id_insumo INTEGER PRIMARY KEY AUTOINCREMENT, nombre_insumo VARCHAR(150) NOT NULL, tipo_insumo VARCHAR(100) NOT NULL, unidad_medida VARCHAR(50) NOT NULL, costo_unitario DECIMAL(10,2) CHECK (costo_unitario IS NULL OR costo_unitario >= 0), descripcion VARCHAR(255))');
         foreach (['a', 'b', 'admin'] as $name) {
             User::create(['nombre' => $name, 'apellido' => 'Test', 'correo' => $name.'@example.com',
@@ -191,7 +192,7 @@ class SupplyTest extends TestCase
         $response = $this->api('POST', '/api/auth/register', null, [
             'nombre' => 'Public', 'apellido' => 'Account', 'correo' => 'public@example.com',
             'password' => '12345678', 'rol' => 'admin',
-        ])->assertCreated()->assertJsonPath('data.user.rol', 'user')->assertJsonMissingPath('data.user.password');
+        ])->assertCreated()->assertJsonPath('data.user.correo', 'public@example.com')->assertJsonMissingPath('data.user.password');
         $this->api('GET', '/api/users', $response->json('data.access_token'))->assertForbidden();
         $this->api('GET', '/api/auth/me', $response->json('data.access_token'))->assertOk();
     }

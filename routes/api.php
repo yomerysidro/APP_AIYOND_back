@@ -21,11 +21,10 @@ Route::prefix('diagnostic-scans')->middleware('auth:api')->group(function () {
     Route::delete('delete/{id}', [DiagnosticScanController::class, 'destroy'])->whereNumber('id');
 });
 
-Route::prefix('auth')->group(function () {
-    Route::post('/register', [AuthController::class, 'register']);
-    Route::post('/login', [AuthController::class, 'login']);
-    // The guard refresh flow validates the refresh window, including expired JWTs.
-    Route::post('/refresh', [AuthController::class, 'refresh']);
+Route::prefix('auth')->middleware('https')->group(function () {
+    Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:auth-login');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth-login');
+    Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('throttle:auth-refresh');
 
     Route::middleware('auth:api')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);

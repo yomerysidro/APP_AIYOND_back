@@ -35,6 +35,7 @@ class PlotTest extends TestCase
         $this->assertSame('sqlite', $pdo->getAttribute(\PDO::ATTR_DRIVER_NAME));
         // Disposable test schema, not application migrations or a physical database.
         $pdo->exec('CREATE TABLE usuarios (id_usuario INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL, apellido TEXT NOT NULL, correo TEXT UNIQUE NOT NULL, password TEXT NOT NULL, dni TEXT, telefono TEXT, sexo TEXT, fecha_nacimiento TEXT, rol TEXT)');
+        $pdo->exec('CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, family_id TEXT, id_usuario INTEGER, token_hash TEXT UNIQUE, device_hash TEXT, user_agent TEXT, expires_at DATETIME, used_at DATETIME, revoked_at DATETIME, replaced_by TEXT, created_at DATETIME, updated_at DATETIME)');
         $pdo->exec('CREATE TABLE parcelas (id_parcela INTEGER PRIMARY KEY AUTOINCREMENT, id_usuario INTEGER NOT NULL REFERENCES usuarios(id_usuario), nombre_parcela TEXT NOT NULL, total_hectareas DECIMAL(10,2) NOT NULL, ubicacion TEXT, fecha_registro DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)');
         $pdo->exec('CREATE TABLE sectores (id_sector INTEGER PRIMARY KEY AUTOINCREMENT, id_parcela INTEGER NOT NULL REFERENCES parcelas(id_parcela) ON DELETE CASCADE, nombre_sector TEXT NOT NULL, superficie_hectareas DECIMAL(10,2) NOT NULL, descripcion TEXT, ubicacion TEXT, fecha_registro DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)');
         $this->userA = UserData::createUser(['nombre' => 'User A', 'apellido' => 'Test', 'correo' => 'a@example.com', 'password' => '12345678'])['data'];

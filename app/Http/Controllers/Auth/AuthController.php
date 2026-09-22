@@ -30,7 +30,7 @@ class AuthController extends Controller
             return $this->information('Datos de validación incorrectos.', 422, $validator->errors());
         }
 
-        $response = AuthData::register($validator->validated());
+        $response = AuthData::register($validator->validated(), $request);
 
         return $response['success']
             ? $this->ok($response['data'], $response['message'], 201)
@@ -48,23 +48,41 @@ class AuthController extends Controller
             return $this->information('Datos de validación incorrectos.', 422, $validator->errors());
         }
 
-        $response = AuthData::login($validator->validated());
+        $response = AuthData::login($validator->validated(), $request);
 
         return $response['success']
             ? $this->ok($response['data'], $response['message'], 200)
             : $this->error($response['message'], 401);
     }
 
-    public function refresh()
+    public function refresh(Request $request)
     {
-        $response = AuthData::refresh();
+        $validator = Validator::make($request->all(), [
+            'refresh_token' => 'required|string|max:512',
+        ]);
 
-        return $this->ok($response['data'], $response['message'], 200);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'La sesión ha expirado.'], 401);
+        }
+
+        $response = AuthData::refresh($validator->validated()['refresh_token'], $request);
+
+        return $response['success']
+            ? $this->ok($response['data'], $response['message'], 200)
+            : response()->json(['success' => false, 'message' => 'La sesión ha expirado.'], 401);
     }
 
-    public function logout()
+    public function logout(Request $request)
     {
-        $response = AuthData::logout();
+        $validator = Validator::make($request->all(), [
+            'refresh_token' => 'required|string|max:512',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->information('Datos de validación incorrectos.', 422, $validator->errors());
+        }
+
+        $response = AuthData::logout($validator->validated()['refresh_token']);
 
         return $this->ok($response['data'], $response['message'], 200);
     }

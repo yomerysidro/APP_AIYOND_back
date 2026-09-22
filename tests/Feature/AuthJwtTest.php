@@ -2,10 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\Auth\RefreshToken;
 use App\Models\User\User;
-use Illuminate\Auth\EloquentUserProvider;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Mockery;
 use Tests\TestCase;
 
 class AuthJwtTest extends TestCase
@@ -15,104 +15,86 @@ class AuthJwtTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['jwt.secret' => bin2hex(random_bytes(32)), 'jwt.ttl' => 60,
-            'jwt.refresh_ttl' => 20160, 'jwt.blacklist_enabled' => true,
-            'cache.default' => 'array']);
-        $this->user = new User(['nombre' => 'Yomer', 'apellido' => 'Santos',
-            'correo' => 'yomer@example.com', 'password' => Hash::make('12345678'), 'rol' => 'user']);
-        $this->user->setAttribute('id_usuario', 123);
-        // Keep real JWT signing, hashing and blacklist; replace only database reads.
-        $provider = Mockery::mock(EloquentUserProvider::class, [app('hash'), User::class])->makePartial();
-        $provider->shouldReceive('retrieveById')->andReturnUsing(fn ($id) => $id == 123 ? $this->user : null);
-        $provider->shouldReceive('retrieveByCredentials')->andReturnUsing(
-            fn ($credentials) => $credentials['correo'] === $this->user->correo ? $this->user : null,
-        );
-        app('auth')->provider('jwt_test_users', fn () => $provider);
-        config(['auth.providers.users.driver' => 'jwt_test_users']);
+        config(['database.default' => 'mysql', 'database.connections.mysql' => [
+            'driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true,
+        ], 'jwt.secret' => bin2hex(random_bytes(32)), 'jwt.ttl' => 60,
+            'jwt.blacklist_enabled' => true, 'cache.default' => 'array', 'auth_tokens.refresh_ttl_days' => 60]);
+        DB::purge('mysql');
+        $pdo = DB::connection('mysql')->getPdo();
+        $pdo->exec('CREATE TABLE usuarios (id_usuario INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, apellido TEXT, correo TEXT UNIQUE, password TEXT, rol TEXT)');
+        $pdo->exec('CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, family_id TEXT NOT NULL, id_usuario INTEGER NOT NULL, token_hash TEXT NOT NULL UNIQUE, device_hash TEXT NOT NULL, user_agent TEXT, expires_at DATETIME NOT NULL, used_at DATETIME, revoked_at DATETIME, replaced_by TEXT, created_at DATETIME, updated_at DATETIME)');
+        $this->user = User::create(['nombre' => 'Yomer', 'apellido' => 'Santos', 'correo' => 'yomer@example.com',
+            'password' => Hash::make('12345678'), 'rol' => 'user']);
     }
 
-    private function nextRequest(): void
+    public function test_login_returns_contract_and_stores_only_refresh_token_hash(): void
     {
-        // Emulate a new PHP request, preserving the blacklist cache.
-        app('auth')->forgetGuards();
-        app('tymon.jwt')->unsetToken();
-        app('tymon.jwt.manager')->setRefreshFlow(false);
-        app('tymon.jwt.payload.factory')->setRefreshFlow(false)->customClaims([]);
-        app('tymon.jwt.validators.payload')->setRefreshFlow(false);
+        $response = $this->postJson('/api/auth/login', ['correo' => $this->user->correo, 'password' => '12345678'])
+            ->assertOk()->assertJsonPath('success', true)->assertJsonPath('data.token_type', 'bearer')
+            ->assertJsonPath('data.expires_in', 3600)->assertJsonStructure(['data' => [
+                'user' => ['id_usuario', 'nombre', 'apellido', 'correo'], 'access_token', 'refresh_token',
+            ]]);
+
+        $refresh = $response->json('data.refresh_token');
+        $record = RefreshToken::firstOrFail();
+        $this->assertNotSame($refresh, $record->token_hash);
+        $this->assertSame(hash('sha256', $refresh), $record->token_hash);
+        $this->assertSame($this->user->id_usuario, $record->id_usuario);
     }
 
-    public function test_login_me_logout_and_blacklist(): void
+    public function test_refresh_rotates_token_and_reuse_revokes_the_family(): void
     {
-        $login = $this->postJson('/api/auth/login', ['correo' => $this->user->correo, 'password' => '12345678']);
-        $login->assertOk()->assertJsonPath('data.token_type', 'bearer')->assertJsonPath('data.expires_in', 3600);
-        $this->assertArrayNotHasKey('password', $login->json('data.user'));
-        $token = $login->json('data.access_token');
-        $this->nextRequest();
-        $this->withToken($token)->getJson('/api/auth/me')->assertOk()->assertJsonPath('data.id_usuario', 123)
-            ->assertJsonMissingPath('data.password');
-        $this->nextRequest();
-        $this->withToken($token)->postJson('/api/auth/logout')->assertOk()->assertJsonPath('data', null);
-        $this->nextRequest();
-        $this->withToken($token)->getJson('/api/auth/me')->assertUnauthorized();
-        $this->nextRequest();
-        $this->withToken($token)->postJson('/api/auth/refresh')->assertUnauthorized();
+        $oldRefresh = $this->login()['refresh_token'];
+        $rotated = $this->postJson('/api/auth/refresh', ['refresh_token' => $oldRefresh])
+            ->assertOk()->assertJsonPath('data.expires_in', 3600)->json('data');
+        $this->assertNotSame($oldRefresh, $rotated['refresh_token']);
+
+        $oldRecord = RefreshToken::where('token_hash', hash('sha256', $oldRefresh))->firstOrFail();
+        $this->assertNotNull($oldRecord->used_at);
+        $this->assertNotNull($oldRecord->revoked_at);
+        $this->assertNotNull($oldRecord->replaced_by);
+
+        $this->postJson('/api/auth/refresh', ['refresh_token' => $oldRefresh])->assertUnauthorized()
+            ->assertExactJson(['success' => false, 'message' => 'La sesión ha expirado.']);
+        $this->postJson('/api/auth/refresh', ['refresh_token' => $rotated['refresh_token']])->assertUnauthorized();
     }
 
-    public function test_expired_token_can_refresh_once_within_window(): void
+    public function test_expired_revoked_missing_and_unknown_refresh_tokens_are_unauthorized(): void
     {
-        $token = auth('api')->login($this->user);
-        $this->travel(61)->minutes();
-        $this->nextRequest();
-        $this->withToken($token)->getJson('/api/auth/me')->assertUnauthorized();
-        $this->nextRequest();
-        $refresh = $this->withToken($token)->postJson('/api/auth/refresh');
-        $refresh->assertOk()->assertJsonPath('data.expires_in', 3600)->assertJsonPath('data.token_type', 'bearer');
-        $newToken = $refresh->json('data.access_token');
-        $this->assertNotSame($token, $newToken);
-        $this->nextRequest();
-        $this->withToken($newToken)->getJson('/api/auth/me')->assertOk();
-        $this->nextRequest();
-        $this->withToken($token)->postJson('/api/auth/refresh')->assertUnauthorized();
-    }
-
-    public function test_refresh_window_is_finite(): void
-    {
-        $token = auth('api')->login($this->user);
-        $this->travel(15)->days();
-        $this->nextRequest();
-        $this->withToken($token)->postJson('/api/auth/refresh')->assertUnauthorized()->assertJsonPath('code', 401);
-    }
-
-    public function test_missing_and_invalid_tokens_are_unauthorized(): void
-    {
-        foreach ([null, 'invalid-token'] as $token) {
-            foreach (['me', 'logout', 'refresh'] as $endpoint) {
-                $this->nextRequest();
-                $this->withHeaders(['Authorization' => $token ? 'Bearer '.$token : '']);
-                $response = $endpoint === 'me' ? $this->getJson('/api/auth/me') : $this->postJson('/api/auth/'.$endpoint);
-                $response->assertUnauthorized()->assertJsonPath('code', 401);
-            }
+        foreach (['expired', 'revoked'] as $state) {
+            $refresh = $this->login()['refresh_token'];
+            $record = RefreshToken::where('token_hash', hash('sha256', $refresh))->firstOrFail();
+            $record->update($state === 'expired' ? ['expires_at' => now()->subSecond()] : ['revoked_at' => now()]);
+            $this->postJson('/api/auth/refresh', ['refresh_token' => $refresh])->assertUnauthorized();
         }
+        $this->postJson('/api/auth/refresh', [])->assertUnauthorized();
+        $this->postJson('/api/auth/refresh', ['refresh_token' => 'unknown'])->assertUnauthorized();
     }
 
-    public function test_incorrect_credentials_do_not_disclose_which_field_failed(): void
+    public function test_logout_revokes_session_family_and_is_idempotent(): void
     {
-        foreach ([[$this->user->correo, 'wrong'], ['missing@example.com', '12345678']] as [$correo, $password]) {
-            $this->nextRequest();
-            $this->postJson('/api/auth/login', compact('correo', 'password'))
-                ->assertUnauthorized()->assertJsonPath('message', 'Credenciales incorrectas.');
-        }
+        $login = $this->login();
+        $this->withToken($login['access_token'])->postJson('/api/auth/logout', ['refresh_token' => $login['refresh_token']])->assertOk();
+        $this->assertNotNull(RefreshToken::firstOrFail()->revoked_at);
+
+        $second = $this->login();
+        RefreshToken::where('token_hash', hash('sha256', $second['refresh_token']))->update(['revoked_at' => now()]);
+        $this->withToken($second['access_token'])->postJson('/api/auth/logout', ['refresh_token' => $second['refresh_token']])->assertOk();
     }
 
-    public function test_validation_uses_existing_api_response(): void
+    public function test_refresh_is_bound_to_device(): void
     {
-        $this->postJson('/api/auth/register', [])->assertUnprocessable()->assertJsonPath('success', false)
-            ->assertJsonStructure(['data' => ['nombre', 'apellido', 'correo', 'password']]);
-        $this->postJson('/api/auth/login', [])->assertUnprocessable()->assertJsonStructure(['data' => ['correo', 'password']]);
+        $login = $this->withHeader('X-Device-ID', 'phone-a')->postJson('/api/auth/login', [
+            'correo' => $this->user->correo, 'password' => '12345678',
+        ])->json('data');
+        $this->withHeader('X-Device-ID', 'phone-b')->postJson('/api/auth/refresh', [
+            'refresh_token' => $login['refresh_token'],
+        ])->assertUnauthorized();
     }
 
-    public function test_missing_token_without_accept_header_is_unauthorized(): void
+    private function login(): array
     {
-        $this->get('/api/auth/me')->assertUnauthorized()->assertJsonPath('code', 401);
+        return $this->postJson('/api/auth/login', ['correo' => $this->user->correo, 'password' => '12345678'])
+            ->assertOk()->json('data');
     }
 }

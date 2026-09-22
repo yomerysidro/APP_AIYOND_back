@@ -27,6 +27,7 @@ class DiseaseTest extends TestCase
         $this->assertSame('sqlite', $pdo->getAttribute(\PDO::ATTR_DRIVER_NAME));
         // Disposable test tables only; never connect to the physical MySQL database.
         $pdo->exec('CREATE TABLE usuarios (id_usuario INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, apellido TEXT, correo TEXT UNIQUE, password TEXT, rol TEXT)');
+        $pdo->exec('CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, family_id TEXT, id_usuario INTEGER, token_hash TEXT UNIQUE, device_hash TEXT, user_agent TEXT, expires_at DATETIME, used_at DATETIME, revoked_at DATETIME, replaced_by TEXT, created_at DATETIME, updated_at DATETIME)');
         $pdo->exec('CREATE TABLE enfermedades (id_enfermedad INTEGER PRIMARY KEY AUTOINCREMENT, nombre_enfermedad VARCHAR(100) NOT NULL UNIQUE, nombre_cientifico VARCHAR(150), descripcion TEXT, sintomas TEXT)');
         foreach (['a', 'b'] as $name) {
             User::create(['nombre' => $name, 'apellido' => 'Test', 'correo' => $name.'@example.com',
