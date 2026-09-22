@@ -6,6 +6,7 @@ use App\Models\Auth\RefreshToken;
 use App\Models\User\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class AuthJwtTest extends TestCase
@@ -96,6 +97,23 @@ class AuthJwtTest extends TestCase
         $this->withHeader('X-Device-ID', 'phone-b')->postJson('/api/auth/refresh', [
             'refresh_token' => $login['refresh_token'],
         ])->assertUnauthorized();
+    }
+
+    public function test_public_auth_routes_do_not_require_authentication_and_invalid_credentials_return_unauthorized(): void
+    {
+        foreach (['api/auth/login', 'api/auth/register', 'api/auth/refresh'] as $uri) {
+            $route = collect(Route::getRoutes())->first(fn ($route) => $route->uri() === $uri);
+            $this->assertNotNull($route);
+            $this->assertNotContains('auth:api', $route->gatherMiddleware());
+            $this->assertNotContains('https', $route->gatherMiddleware());
+        }
+
+        $this->postJson('/api/auth/login', [
+            'correo' => $this->user->correo,
+            'password' => 'incorrect-password',
+        ])->assertUnauthorized()->assertJsonPath('message', 'Credenciales incorrectas.');
+
+        $this->postJson('/api/auth/login', [])->assertUnprocessable();
     }
 
     private function login(): array

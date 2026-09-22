@@ -21,15 +21,15 @@ Route::prefix('diagnostic-scans')->middleware('auth:api')->group(function () {
     Route::delete('delete/{id}', [DiagnosticScanController::class, 'destroy'])->whereNumber('id');
 });
 
-Route::prefix('auth')->middleware('https')->group(function () {
+Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:auth-login');
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth-login');
     Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('throttle:auth-refresh');
+});
 
-    Route::middleware('auth:api')->group(function () {
-        Route::post('/logout', [AuthController::class, 'logout']);
-        Route::get('/me', [AuthController::class, 'me']);
-    });
+Route::prefix('auth')->middleware('auth:api')->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/me', [AuthController::class, 'me']);
 });
 
 Route::prefix('plots')->middleware('auth:api')->group(function () {
