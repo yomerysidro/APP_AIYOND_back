@@ -31,9 +31,15 @@ class AuthJwtTest extends TestCase
     {
         $response = $this->postJson('/api/auth/login', ['correo' => $this->user->correo, 'password' => '12345678'])
             ->assertOk()->assertJsonPath('success', true)->assertJsonPath('data.token_type', 'bearer')
+            ->assertJsonPath('data.user.rol', 'user')
             ->assertJsonPath('data.expires_in', 3600)->assertJsonStructure(['data' => [
-                'user' => ['id_usuario', 'nombre', 'apellido', 'correo'], 'access_token', 'refresh_token',
+                'user' => ['id_usuario', 'nombre', 'apellido', 'correo', 'rol', 'dni', 'telefono', 'sexo', 'fecha_nacimiento'],
+                'access_token', 'refresh_token',
             ]]);
+
+        $this->withToken($response->json('data.access_token'))->getJson('/api/auth/me')
+            ->assertOk()->assertJsonPath('data.rol', 'user')
+            ->assertJsonStructure(['data' => ['id_usuario', 'nombre', 'apellido', 'correo', 'rol', 'dni', 'telefono', 'sexo', 'fecha_nacimiento']]);
 
         $refresh = $response->json('data.refresh_token');
         $record = RefreshToken::firstOrFail();

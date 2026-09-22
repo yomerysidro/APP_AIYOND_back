@@ -110,12 +110,34 @@ class AuthData
             throw new AuthenticationException;
         }
 
-        return ['success' => true, 'message' => 'Usuario autenticado correctamente.', 'data' => $user];
+        return ['success' => true, 'message' => 'Usuario autenticado correctamente.', 'data' => self::userPayload($user)];
     }
 
-    /** @return array{id_usuario: mixed, nombre: mixed, apellido: mixed, correo: mixed} */
+    /**
+     * @return array{
+     *     id_usuario: mixed,
+     *     nombre: mixed,
+     *     apellido: mixed,
+     *     correo: mixed,
+     *     rol: mixed,
+     *     dni: mixed,
+     *     telefono: mixed,
+     *     sexo: mixed,
+     *     fecha_nacimiento: mixed
+     * }
+     */
     private static function userPayload(User $user): array
     {
-        return $user->only(['id_usuario', 'nombre', 'apellido', 'correo']);
+        return $user->only([
+            'id_usuario',
+            'nombre',
+            'apellido',
+            'correo',
+            'rol',
+            'dni',
+            'telefono',
+            'sexo',
+            'fecha_nacimiento',
+        ]);
     }
 }
