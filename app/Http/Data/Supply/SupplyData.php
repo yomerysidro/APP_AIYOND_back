@@ -96,6 +96,13 @@ class SupplyData
 
                 return ['success' => false, 'message' => 'Insumo no encontrado.', 'data' => null];
             }
+
+            if ($supply->diseaseSupplies()->exists()) {
+                $connection->rollBack();
+
+                return ['success' => false, 'message' => 'El insumo no puede eliminarse porque tiene relaciones con enfermedades.', 'data' => null];
+            }
+
             $supply->delete();
             $connection->commit();
 

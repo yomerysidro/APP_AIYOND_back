@@ -99,8 +99,8 @@ class DiseaseSupplyTest extends TestCase
         $this->assertSame(1, Disease::findOrFail($body['id_enfermedad'])->diseaseSupplies()->count());
         $this->assertSame(1, Supply::findOrFail($body['id_insumo'])->diseaseSupplies()->count());
         $this->api('PUT', '/api/disease-supplies/update/'.$id, $this->adminToken, array_merge($body, ['organico' => true]))->assertOk()->assertJsonPath('data.organico', true);
-        $this->api('PATCH', '/api/disease-supplies/update/'.$id, $this->adminToken, ['frecuencia_aplicacion' => null, 'dosis_referencial_ha' => 0])
-            ->assertOk()->assertJsonPath('data.frecuencia_aplicacion', null)->assertJsonPath('data.dosis_referencial_ha', '0.00');
+        $this->api('PATCH', '/api/disease-supplies/update/'.$id, $this->adminToken, ['frecuencia_aplicacion' => null, 'dosis_referencial_ha' => 1])
+            ->assertOk()->assertJsonPath('data.frecuencia_aplicacion', null)->assertJsonPath('data.dosis_referencial_ha', '1.00');
         $this->api('PATCH', '/api/disease-supplies/update/'.$id, $this->adminToken, ['dosis_referencial_ha' => null])
             ->assertOk()->assertJsonPath('data.dosis_referencial_ha', null);
         $this->api('DELETE', '/api/disease-supplies/delete/'.$id, $this->adminToken)->assertOk()->assertJsonPath('data', null);
@@ -135,6 +135,9 @@ class DiseaseSupplyTest extends TestCase
         $body = $this->fixture();
         $sano = Disease::create(['nombre_enfermedad' => 'Sano']);
         $this->api('GET', '/api/diseases/'.$sano->id_enfermedad.'/supplies', $this->tokenA)->assertOk()->assertJsonPath('data', []);
+        $this->api('POST', '/api/disease-supplies/create', $this->adminToken, array_merge($body, [
+            'id_enfermedad' => $sano->id_enfermedad,
+        ]))->assertUnprocessable()->assertJsonPath('message', 'No se pueden asociar insumos a la enfermedad Sano.');
         $this->api('GET', '/api/diseases/999999/supplies', $this->tokenA)->assertNotFound()->assertJsonPath('message', 'Enfermedad no encontrada.');
         $this->api('GET', '/api/disease-supplies/list/999999', $this->adminToken)->assertNotFound();
         $this->api('PUT', '/api/disease-supplies/update/999999', $this->adminToken, $body)->assertNotFound();
@@ -146,7 +149,7 @@ class DiseaseSupplyTest extends TestCase
     {
         $body = $this->fixture();
         $id = $this->api('POST', '/api/disease-supplies/create', $this->adminToken, $body)->assertCreated()->json('data.id_enfermedad_insumo');
-        foreach ([['id_enfermedad' => 999999], ['id_insumo' => 999999], ['dosis_referencial_ha' => -1],
+        foreach ([['id_enfermedad' => 999999], ['id_insumo' => 999999], ['dosis_referencial_ha' => 0], ['dosis_referencial_ha' => -1],
             ['organico' => 'invalid'], ['frecuencia_aplicacion' => str_repeat('x', 151)]] as $invalid) {
             foreach (['POST', 'PUT', 'PATCH'] as $method) {
                 $uri = $method === 'POST' ? '/api/disease-supplies/create' : '/api/disease-supplies/update/'.$id;

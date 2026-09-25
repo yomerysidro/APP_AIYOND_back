@@ -51,11 +51,25 @@ class DiseaseSupplyData
             $relation = new DiseaseSupply;
             $relation->fill(array_intersect_key($data, array_flip($relation->getFillable())));
 
+            if (! self::hasValidDose($relation->dosis_referencial_ha)) {
+                $connection->rollBack();
+
+                return ['success' => false, 'message' => 'La dosis referencial debe ser un número finito mayor que cero.', 'data' => null];
+            }
+
             // Keep both referenced records present until the transaction completes.
-            if (! Disease::whereKey($relation->id_enfermedad)->sharedLock()->first()) {
+            $disease = Disease::whereKey($relation->id_enfermedad)->sharedLock()->first();
+
+            if (! $disease) {
                 $connection->rollBack();
 
                 return ['success' => false, 'message' => 'Enfermedad no encontrada.', 'data' => null];
+            }
+
+            if ($disease->nombre_enfermedad === 'Sano') {
+                $connection->rollBack();
+
+                return ['success' => false, 'message' => 'No se pueden asociar insumos a la enfermedad Sano.', 'data' => null];
             }
 
             if (! Supply::whereKey($relation->id_insumo)->sharedLock()->first()) {
@@ -109,11 +123,25 @@ class DiseaseSupplyData
             }
             $relation->fill(array_intersect_key($data, array_flip($relation->getFillable())));
 
+            if (! self::hasValidDose($relation->dosis_referencial_ha)) {
+                $connection->rollBack();
+
+                return ['success' => false, 'message' => 'La dosis referencial debe ser un número finito mayor que cero.', 'data' => null];
+            }
+
             // Keep both referenced records present until the transaction completes.
-            if (! Disease::whereKey($relation->id_enfermedad)->sharedLock()->first()) {
+            $disease = Disease::whereKey($relation->id_enfermedad)->sharedLock()->first();
+
+            if (! $disease) {
                 $connection->rollBack();
 
                 return ['success' => false, 'message' => 'Enfermedad no encontrada.', 'data' => null];
+            }
+
+            if ($disease->nombre_enfermedad === 'Sano') {
+                $connection->rollBack();
+
+                return ['success' => false, 'message' => 'No se pueden asociar insumos a la enfermedad Sano.', 'data' => null];
             }
 
             if (! Supply::whereKey($relation->id_insumo)->sharedLock()->first()) {
@@ -177,5 +205,10 @@ class DiseaseSupplyData
 
             throw $exception;
         }
+    }
+
+    private static function hasValidDose(mixed $dose): bool
+    {
+        return $dose === null || (is_numeric($dose) && is_finite((float) $dose) && (float) $dose > 0);
     }
 }

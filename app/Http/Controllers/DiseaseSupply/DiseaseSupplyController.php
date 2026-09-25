@@ -4,9 +4,9 @@ namespace App\Http\Controllers\DiseaseSupply;
 
 use App\Http\Controllers\Controller;
 use App\Http\Data\DiseaseSupply\DiseaseSupplyData;
+use App\Http\Requests\DiseaseSupply\StoreDiseaseSupplyRequest;
+use App\Http\Requests\DiseaseSupply\UpdateDiseaseSupplyRequest;
 use App\Traits\ApiResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 
 class DiseaseSupplyController extends Controller
 {
@@ -46,66 +46,39 @@ class DiseaseSupplyController extends Controller
             : $this->error($response['message'], 404);
     }
 
-    public function store(Request $request)
+    public function store(StoreDiseaseSupplyRequest $request)
     {
-        $validator = Validator::make($request->all(), [
-            'id_enfermedad' => 'required|integer|exists:mysql.enfermedades,id_enfermedad',
-            'id_insumo' => 'required|integer|exists:mysql.insumos,id_insumo',
-            'frecuencia_aplicacion' => 'nullable|string|max:150',
-            'organico' => 'required|boolean',
-            'dosis_referencial_ha' => 'nullable|numeric|min:0',
-        ]);
-
-        if ($validator->fails()) {
-            return $this->information('Datos de validación incorrectos.', 422, $validator->errors());
-        }
-
-        $response = DiseaseSupplyData::createDiseaseSupply($validator->validated());
+        $response = DiseaseSupplyData::createDiseaseSupply($request->validated());
 
         return $response['success']
             ? $this->ok($response['data'], $response['message'], 201)
-            : $this->error($response['message'], $response['message'] === 'Este insumo ya está asociado a la enfermedad seleccionada.' ? 409 : 404);
+            : $this->error($response['message'], $this->errorStatus($response['message']));
     }
 
-    public function update(Request $request, int $id)
+    public function update(UpdateDiseaseSupplyRequest $request, int $id)
     {
-        $validator = Validator::make($request->all(), [
-            'id_enfermedad' => 'required|integer|exists:mysql.enfermedades,id_enfermedad',
-            'id_insumo' => 'required|integer|exists:mysql.insumos,id_insumo',
-            'frecuencia_aplicacion' => 'nullable|string|max:150',
-            'organico' => 'required|boolean',
-            'dosis_referencial_ha' => 'nullable|numeric|min:0',
-        ]);
-
-        if ($validator->fails()) {
-            return $this->information('Datos de validación incorrectos.', 422, $validator->errors());
-        }
-
-        $response = DiseaseSupplyData::updateDiseaseSupply($id, $validator->validated());
-
-        return $response['success']
-            ? $this->ok($response['data'], $response['message'], 200)
-            : $this->error($response['message'], $response['message'] === 'Este insumo ya está asociado a la enfermedad seleccionada.' ? 409 : 404);
+        return $this->respondToUpdate(DiseaseSupplyData::updateDiseaseSupply($id, $request->validated()));
     }
 
-    public function patch(Request $request, int $id)
+    public function patch(UpdateDiseaseSupplyRequest $request, int $id)
     {
-        $validator = Validator::make($request->all(), [
-            'id_enfermedad' => 'sometimes|required|integer|exists:mysql.enfermedades,id_enfermedad',
-            'id_insumo' => 'sometimes|required|integer|exists:mysql.insumos,id_insumo',
-            'frecuencia_aplicacion' => 'sometimes|nullable|string|max:150',
-            'organico' => 'sometimes|required|boolean',
-            'dosis_referencial_ha' => 'sometimes|nullable|numeric|min:0',
-        ]);
+        return $this->respondToUpdate(DiseaseSupplyData::updateDiseaseSupply($id, $request->validated()));
+    }
 
-        if ($validator->fails()) {
-            return $this->information('Datos de validación incorrectos.', 422, $validator->errors());
-        }
-
-        $response = DiseaseSupplyData::updateDiseaseSupply($id, $validator->validated());
-
+    private function respondToUpdate(array $response)
+    {
         return $response['success']
             ? $this->ok($response['data'], $response['message'], 200)
-            : $this->error($response['message'], $response['message'] === 'Este insumo ya está asociado a la enfermedad seleccionada.' ? 409 : 404);
+            : $this->error($response['message'], $this->errorStatus($response['message']));
+    }
+
+    private function errorStatus(string $message): int
+    {
+        return match ($message) {
+            'Este insumo ya está asociado a la enfermedad seleccionada.' => 409,
+            'No se pueden asociar insumos a la enfermedad Sano.' => 422,
+            'La dosis referencial debe ser un número finito mayor que cero.' => 422,
+            default => 404,
+        };
     }
 }

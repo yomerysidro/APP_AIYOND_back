@@ -35,6 +35,8 @@ class DiagnosticScanTest extends TestCase
         $pdo->exec('CREATE TABLE parcelas (id_parcela INTEGER PRIMARY KEY AUTOINCREMENT, id_usuario INTEGER NOT NULL REFERENCES usuarios(id_usuario), nombre_parcela TEXT, total_hectareas DECIMAL(10,2), ubicacion TEXT, fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP)');
         $pdo->exec('CREATE TABLE sectores (id_sector INTEGER PRIMARY KEY AUTOINCREMENT, id_parcela INTEGER NOT NULL REFERENCES parcelas(id_parcela) ON DELETE CASCADE, nombre_sector TEXT, superficie_hectareas DECIMAL(10,2), descripcion TEXT, ubicacion TEXT, fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP)');
         $pdo->exec('CREATE TABLE enfermedades (id_enfermedad INTEGER PRIMARY KEY AUTOINCREMENT, nombre_enfermedad TEXT, nombre_cientifico TEXT, descripcion TEXT, sintomas TEXT)');
+        $pdo->exec('CREATE TABLE insumos (id_insumo INTEGER PRIMARY KEY AUTOINCREMENT, nombre_insumo TEXT, tipo_insumo TEXT, unidad_medida TEXT, costo_unitario DECIMAL(10,2), descripcion TEXT)');
+        $pdo->exec('CREATE TABLE enfermedad_insumo (id_enfermedad_insumo INTEGER PRIMARY KEY AUTOINCREMENT, id_insumo INTEGER NOT NULL REFERENCES insumos(id_insumo), id_enfermedad INTEGER NOT NULL REFERENCES enfermedades(id_enfermedad), frecuencia_aplicacion TEXT, organico BOOLEAN NOT NULL, dosis_referencial_ha DECIMAL(10,2), UNIQUE(id_enfermedad, id_insumo))');
         $pdo->exec("CREATE TABLE escaneos_diagnosticos (id_escaneo_diagnostico INTEGER PRIMARY KEY AUTOINCREMENT, id_sector INTEGER NOT NULL REFERENCES sectores(id_sector) ON DELETE CASCADE, id_enfermedad INTEGER NOT NULL REFERENCES enfermedades(id_enfermedad), fecha_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, pct_confianza DECIMAL(6,5) NOT NULL CHECK(pct_confianza BETWEEN 0 AND 1), area_afectada_ha DECIMAL(10,2) CHECK(area_afectada_ha IS NULL OR area_afectada_ha >= 0), estado_tratamiento VARCHAR(50) NOT NULL DEFAULT 'pendiente')");
         foreach (['a', 'b', 'admin'] as $name) {
             User::create(['nombre' => $name, 'apellido' => 'Test', 'correo' => $name.'@example.com', 'password' => Hash::make('12345678'), 'rol' => $name === 'admin' ? 'admin' : 'user']);
@@ -70,6 +72,7 @@ class DiagnosticScanTest extends TestCase
             ->assertJsonPath('data.id_enfermedad', $this->diseaseId)->assertJsonPath('data.pct_confianza', '0.92450')
             ->assertJsonPath('data.estado_tratamiento', 'pendiente')->assertJsonPath('data.area_afectada_ha', null);
         $id = $created->json('data.id_escaneo_diagnostico');
+        $this->assertSame(0, DB::connection('mysql')->table('enfermedad_insumo')->count());
         $this->assertNotNull($created->json('data.fecha_hora'));
         $this->assertLessThan(10, abs(time() - strtotime(DiagnosticScan::find($id)->getRawOriginal('fecha_hora').' UTC')));
         $this->assertStringNotContainsString('password', $created->getContent());

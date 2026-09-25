@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Disease\Disease;
+use App\Models\DiseaseSupply\DiseaseSupply;
 use App\Models\Supply\Supply;
 use App\Models\User\User;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +32,8 @@ class SupplyTest extends TestCase
         $pdo->exec('CREATE TABLE usuarios (id_usuario INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, apellido TEXT, correo TEXT UNIQUE, password TEXT, rol TEXT, dni TEXT, telefono TEXT, sexo TEXT, fecha_nacimiento TEXT)');
         $pdo->exec('CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, family_id TEXT, id_usuario INTEGER, token_hash TEXT UNIQUE, device_hash TEXT, user_agent TEXT, expires_at DATETIME, used_at DATETIME, revoked_at DATETIME, replaced_by TEXT, created_at DATETIME, updated_at DATETIME)');
         $pdo->exec('CREATE TABLE insumos (id_insumo INTEGER PRIMARY KEY AUTOINCREMENT, nombre_insumo VARCHAR(150) NOT NULL, tipo_insumo VARCHAR(100) NOT NULL, unidad_medida VARCHAR(50) NOT NULL, costo_unitario DECIMAL(10,2) CHECK (costo_unitario IS NULL OR costo_unitario >= 0), descripcion VARCHAR(255))');
+        $pdo->exec('CREATE TABLE enfermedades (id_enfermedad INTEGER PRIMARY KEY AUTOINCREMENT, nombre_enfermedad TEXT NOT NULL UNIQUE, nombre_cientifico TEXT, descripcion TEXT, sintomas TEXT)');
+        $pdo->exec('CREATE TABLE enfermedad_insumo (id_enfermedad_insumo INTEGER PRIMARY KEY AUTOINCREMENT, id_insumo INTEGER NOT NULL REFERENCES insumos(id_insumo) ON DELETE CASCADE, id_enfermedad INTEGER NOT NULL REFERENCES enfermedades(id_enfermedad) ON DELETE CASCADE, frecuencia_aplicacion VARCHAR(150), organico BOOLEAN NOT NULL DEFAULT 0, dosis_referencial_ha DECIMAL(10,2), UNIQUE(id_enfermedad, id_insumo))');
         foreach (['a', 'b', 'admin'] as $name) {
             User::create(['nombre' => $name, 'apellido' => 'Test', 'correo' => $name.'@example.com',
                 'password' => Hash::make('12345678'), 'rol' => $name === 'admin' ? 'admin' : 'user']);
@@ -157,13 +161,19 @@ class SupplyTest extends TestCase
     public function test_foreign_key_restrict_returns_conflict_and_preserves_records(): void
     {
         $supply = Supply::create(['nombre_insumo' => 'Referenced', 'tipo_insumo' => 'Test', 'unidad_medida' => 'kg']);
-        // Temporary test-only reference; no production relationship module is implemented.
-        DB::connection('mysql')->statement('CREATE TABLE test_supply_references (id INTEGER PRIMARY KEY, id_insumo INTEGER REFERENCES insumos(id_insumo) ON DELETE RESTRICT)');
-        DB::connection('mysql')->table('test_supply_references')->insert(['id' => 1, 'id_insumo' => $supply->id_insumo]);
+        $disease = Disease::create(['nombre_enfermedad' => 'Test disease']);
+        $relation = DiseaseSupply::create([
+            'id_insumo' => $supply->id_insumo,
+            'id_enfermedad' => $disease->id_enfermedad,
+            'organico' => false,
+            'dosis_referencial_ha' => 1,
+        ]);
+
         $this->api('DELETE', '/api/supplies/'.$supply->id_insumo, $this->adminToken)->assertStatus(409)
-            ->assertJsonPath('message', 'El insumo no puede eliminarse porque está siendo utilizado por otros registros.');
+            ->assertJsonPath('message', 'El insumo no puede eliminarse porque tiene relaciones con enfermedades.');
+
         $this->assertNotNull($supply->fresh());
-        $this->assertSame(1, DB::connection('mysql')->table('test_supply_references')->count());
+        $this->assertNotNull($relation->fresh());
         $this->assertSame(0, DB::connection('mysql')->transactionLevel());
     }
 

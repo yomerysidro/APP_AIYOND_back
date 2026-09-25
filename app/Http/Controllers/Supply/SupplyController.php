@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Supply;
 
 use App\Http\Controllers\Controller;
 use App\Http\Data\Supply\SupplyData;
+use App\Http\Requests\Supply\StoreSupplyRequest;
+use App\Http\Requests\Supply\UpdateSupplyRequest;
 use App\Traits\ApiResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 
 class SupplyController extends Controller
 {
@@ -28,67 +28,21 @@ class SupplyController extends Controller
             : $this->error($response['message'], 404);
     }
 
-    public function store(Request $request)
+    public function store(StoreSupplyRequest $request)
     {
-        $validator = Validator::make($request->all(), [
-            'nombre_insumo' => 'required|string|max:150',
-            'tipo_insumo' => 'required|string|max:100',
-            'unidad_medida' => 'required|string|max:50',
-            'costo_unitario' => 'nullable|numeric|min:0',
-            'descripcion' => 'nullable|string|max:255',
-        ]);
+        $response = SupplyData::createSupply($request->validated());
 
-        if ($validator->fails()) {
-            return $this->information('Datos de validación incorrectos.', 422, $validator->errors());
-        }
-
-        $response = SupplyData::createSupply($validator->validated());
-
-        return $response['success']
-            ? $this->ok($response['data'], $response['message'], 201)
-            : $this->error($response['message'], 400);
+        return $this->ok($response['data'], $response['message'], 201);
     }
 
-    public function update(Request $request, int $id)
+    public function update(UpdateSupplyRequest $request, int $id)
     {
-        $validator = Validator::make($request->all(), [
-            'nombre_insumo' => 'required|string|max:150',
-            'tipo_insumo' => 'required|string|max:100',
-            'unidad_medida' => 'required|string|max:50',
-            'costo_unitario' => 'nullable|numeric|min:0',
-            'descripcion' => 'nullable|string|max:255',
-        ]);
-
-        if ($validator->fails()) {
-            return $this->information('Datos de validación incorrectos.', 422, $validator->errors());
-        }
-
-        $response = SupplyData::updateSupply($id, $validator->validated());
-
-        return $response['success']
-            ? $this->ok($response['data'], $response['message'], 200)
-            : $this->error($response['message'], 404);
+        return $this->respondToUpdate(SupplyData::updateSupply($id, $request->validated()));
     }
 
-    public function patch(Request $request, int $id)
+    public function patch(UpdateSupplyRequest $request, int $id)
     {
-        $validator = Validator::make($request->all(), [
-            'nombre_insumo' => 'sometimes|required|string|max:150',
-            'tipo_insumo' => 'sometimes|required|string|max:100',
-            'unidad_medida' => 'sometimes|required|string|max:50',
-            'costo_unitario' => 'sometimes|nullable|numeric|min:0',
-            'descripcion' => 'sometimes|nullable|string|max:255',
-        ]);
-
-        if ($validator->fails()) {
-            return $this->information('Datos de validación incorrectos.', 422, $validator->errors());
-        }
-
-        $response = SupplyData::updateSupply($id, $validator->validated());
-
-        return $response['success']
-            ? $this->ok($response['data'], $response['message'], 200)
-            : $this->error($response['message'], 404);
+        return $this->respondToUpdate(SupplyData::updateSupply($id, $request->validated()));
     }
 
     public function destroy(int $id)
@@ -98,5 +52,12 @@ class SupplyController extends Controller
         return $response['success']
             ? $this->ok($response['data'], $response['message'], 200)
             : $this->error($response['message'], $response['message'] === 'Insumo no encontrado.' ? 404 : 409);
+    }
+
+    private function respondToUpdate(array $response)
+    {
+        return $response['success']
+            ? $this->ok($response['data'], $response['message'], 200)
+            : $this->error($response['message'], 404);
     }
 }
