@@ -11,6 +11,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Testing\TestResponse;
+use PHPUnit\Framework\Attributes\TestWith;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -36,7 +37,7 @@ class DiseaseSupplyTest extends TestCase
         $pdo->exec('CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, family_id TEXT, id_usuario INTEGER, token_hash TEXT UNIQUE, device_hash TEXT, user_agent TEXT, expires_at DATETIME, used_at DATETIME, revoked_at DATETIME, replaced_by TEXT, created_at DATETIME, updated_at DATETIME)');
         $pdo->exec('CREATE TABLE insumos (id_insumo INTEGER PRIMARY KEY AUTOINCREMENT, nombre_insumo VARCHAR(150) NOT NULL, tipo_insumo VARCHAR(100) NOT NULL, unidad_medida VARCHAR(50) NOT NULL, costo_unitario DECIMAL(10,2) CHECK (costo_unitario IS NULL OR costo_unitario >= 0), descripcion VARCHAR(255))');
         $pdo->exec('CREATE TABLE enfermedades (id_enfermedad INTEGER PRIMARY KEY AUTOINCREMENT, nombre_enfermedad TEXT NOT NULL UNIQUE, nombre_cientifico TEXT, descripcion TEXT, sintomas TEXT)');
-        $pdo->exec('CREATE TABLE enfermedad_insumo (id_enfermedad_insumo INTEGER PRIMARY KEY AUTOINCREMENT, id_insumo INTEGER NOT NULL REFERENCES insumos(id_insumo), id_enfermedad INTEGER NOT NULL REFERENCES enfermedades(id_enfermedad), frecuencia_aplicacion VARCHAR(150), organico BOOLEAN NOT NULL DEFAULT 0, dosis_referencial_ha DECIMAL(10,2), UNIQUE(id_enfermedad, id_insumo))');
+        $pdo->exec('CREATE TABLE enfermedad_insumo (id_enfermedad_insumo INTEGER PRIMARY KEY AUTOINCREMENT, id_insumo INTEGER NOT NULL REFERENCES insumos(id_insumo), id_enfermedad INTEGER NOT NULL REFERENCES enfermedades(id_enfermedad), dosis_indicacion TEXT, modalidad_calculo TEXT, referencia_tecnica TEXT, frecuencia_aplicacion VARCHAR(150), organico BOOLEAN NOT NULL DEFAULT 0, dosis_referencial_ha DECIMAL(10,2), UNIQUE(id_enfermedad, id_insumo))');
         foreach (['a', 'b', 'admin'] as $name) {
             User::create(['nombre' => $name, 'apellido' => 'Test', 'correo' => $name.'@example.com',
                 'password' => Hash::make('12345678'), 'rol' => $name === 'admin' ? 'admin' : 'user']);
@@ -107,6 +108,34 @@ class DiseaseSupplyTest extends TestCase
         $this->assertSame(0, DiseaseSupply::count());
         $this->assertSame(1, Disease::count());
         $this->assertSame(1, Supply::count());
+    }
+
+    #[TestWith([null, null])]
+    #[TestWith([2.5, '2.50'])]
+    public function test_by_disease_preserves_descriptive_instructions_and_price_with_optional_numeric_dose(?float $dose, ?string $expectedDose): void
+    {
+        $body = array_merge($this->fixture(), [
+            'dosis_referencial_ha' => $dose,
+            'dosis_indicacion' => 'Seguir las indicaciones de la etiqueta del producto.',
+            'modalidad_calculo' => 'segun_etiqueta',
+            'referencia_tecnica' => 'Ficha tecnica del producto de prueba',
+        ]);
+        $created = DiseaseSupplyData::createDiseaseSupply($body);
+        $this->assertTrue($created['success']);
+
+        $response = $this->api('GET', '/api/diseases/'.$body['id_enfermedad'].'/supplies', $this->tokenA);
+
+        $response->assertOk()->assertJsonPath('success', true)->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id_enfermedad', $body['id_enfermedad'])
+            ->assertJsonPath('data.0.id_insumo', $body['id_insumo'])
+            ->assertJsonPath('data.0.dosis_indicacion', 'Seguir las indicaciones de la etiqueta del producto.')
+            ->assertJsonPath('data.0.modalidad_calculo', 'segun_etiqueta')
+            ->assertJsonPath('data.0.referencia_tecnica', 'Ficha tecnica del producto de prueba')
+            ->assertJsonPath('data.0.frecuencia_aplicacion', 'Test frequency')
+            ->assertJsonPath('data.0.dosis_referencial_ha', $expectedDose)
+            ->assertJsonPath('data.0.supply.nombre_insumo', 'Test supply')
+            ->assertJsonPath('data.0.supply.unidad_medida', 'kg')
+            ->assertJsonPath('data.0.supply.costo_unitario', '24.50');
     }
 
     public function test_duplicate_create_and_update_are_conflicts(): void

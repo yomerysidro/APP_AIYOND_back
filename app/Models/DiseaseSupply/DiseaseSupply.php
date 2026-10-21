@@ -20,7 +20,16 @@ class DiseaseSupply extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['id_insumo', 'id_enfermedad', 'frecuencia_aplicacion', 'organico', 'dosis_referencial_ha'];
+    protected $fillable = [
+        'id_insumo',
+        'id_enfermedad',
+        'dosis_indicacion',
+        'modalidad_calculo',
+        'referencia_tecnica',
+        'frecuencia_aplicacion',
+        'organico',
+        'dosis_referencial_ha',
+    ];
 
     protected function casts(): array
     {
